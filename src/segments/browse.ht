@@ -9,7 +9,7 @@ var LocalStorage = spotube.LocalStorage
 var JSON = std.JSON
 var delayed = std.delayed
 var Duration = std.Duration
-var FutureUtils = std.FutureUtils
+var futureUtils = std.FutureUtils
 
 class BrowseEndpoint {
   var lbApi: HttpClient
@@ -29,7 +29,7 @@ class BrowseEndpoint {
       () => recommendations.getCreatedForPlaylists(),
     ]
 
-    return FutureUtils.chain(sectionsFutures, delay: Duration(milliseconds: 200))
+    return futureUtils.chain(sectionsFutures, delay: Duration(milliseconds: 200))
     .then((sections) {
       return {
         limit: limit ?? 25,
