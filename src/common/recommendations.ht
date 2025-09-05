@@ -236,7 +236,7 @@ class Recommendations {
         range: "quarter"
       }.toJson()
     ).then((res){
-      var artists = res.data["payload"]["artists"]
+      var artists = res.data?["payload"]?["artists"] ?? []
       
       return artists.where((artist) => artist["artist_mbid"] != null).toList()
     })
