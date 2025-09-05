@@ -1,12 +1,12 @@
 {
   "type": "metadata",
-  "version": "1.0.0",
-  "name": "Musicbrainz and Listenbrainz",
-  "author": "Kingkor Roy Tirtho",
+  "version": "1.0.1",
+  "name": "Musicbrainz and Listenbrainz TSS Mod",
+  "author": "Kingkor Roy Tirtho, Modified by TSS",
   "description": "Musicbrainz and Listenbrainz integration for Spotube",
   "entryPoint": "BrainzMetadataProviderPlugin",
   "apis": ["webview", "localstorage", "timezone"],
   "abilities": ["authentication", "scrobbling"],
-  "repository": "https://github.com/KRTirtho/spotube-plugin-musicbrainz-listenbrainz",
+  "repository": "https://github.com/TwoStickSquidge/spotube-plugin-musicbrainz-listenbrainz",
   "pluginApiVersion": "1.0.0"
 }
