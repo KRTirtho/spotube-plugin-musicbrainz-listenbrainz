@@ -50,6 +50,7 @@ class SearchEndpoint {
         limit: limit ?? 10,
         offset: offset ?? 0,
         fmt: "json",
+        dismax: true,
       }.toJson()
     ).then((res){
       if (res.data["release-groups"].isEmpty) {
@@ -83,6 +84,7 @@ class SearchEndpoint {
         limit: limit ?? 10,
         offset: offset ?? 0,
         fmt: "json",
+        dismax: true,
       }.toJson()
     ).then((res){
       var artistIds = res.data["artists"].map((artist) => artist["id"]).toList()
@@ -119,6 +121,7 @@ class SearchEndpoint {
         limit: limit ?? 10,
         offset: offset ?? 0,
         fmt: "json",
+        dismax: true,
       }.toJson()
     ).then((res){
       if (res.data["recordings"].isEmpty) {
