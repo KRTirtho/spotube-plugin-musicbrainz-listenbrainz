@@ -132,7 +132,15 @@ class CommonArtistEntity {
       ).then((res)=>res.data["artists"])
 
       return Future.wait([artistWithImages, artistWithoutImages]).then((results) {
-        return results.expand((res)=>res).toList()
+        var artistsById = {}
+        for (var artist in results.expand((res)=>res).toList()) {
+          artistsById[artist["id"]] = artist
+        }
+
+        return artistIds
+          .where((id) => artistsById.containsKey(id))
+          .map((id) => artistsById[id])
+          .toList()
       })
     })
   }
