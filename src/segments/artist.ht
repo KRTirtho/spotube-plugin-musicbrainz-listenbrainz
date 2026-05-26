@@ -49,9 +49,9 @@ class ArtistEndpoint {
   }
 
   fun topTracks(id: string, {limit: int, offset: int}) {
-    var topLimit = limit ?? 20
-    if (topLimit > 20) {
-      topLimit = 20
+    var topLimit = limit ?? 50
+    if (topLimit > 50) {
+      topLimit = 50
     }
 
     return lbApi.get_req(
@@ -74,19 +74,32 @@ class ArtistEndpoint {
         }.toJson()
       }
 
-      return mbApi.get_req(
-        "/recording",
-        queryParameters: {
-          fmt: "json",
-          query: recordingMbids.map((recordingMbid) => "rid:${recordingMbid}").join(" OR "),
-          inc: "artist-credits+releases+release-groups+isrcs"
-        }.toJson()
-      ).then((res){
-        var recordings = MbConverter.recordings(res.data["recordings"] ?? [])
+      var recordingBatches = []
+      for (var i = 0; i < recordingMbids.length; i += 10) {
+        recordingBatches.add(recordingMbids.skip(i).take(10).toList())
+      }
+
+      return Future.wait(
+        recordingBatches.map((batch) {
+          return mbApi.get_req(
+            "/recording",
+            queryParameters: {
+              fmt: "json",
+              query: batch.map((recordingMbid) => "rid:${recordingMbid}").join(" OR "),
+              limit: batch.length,
+              inc: "artist-credits+releases+release-groups+isrcs"
+            }.toJson()
+          ).then((res) {
+            return MbConverter.recordings(res.data["recordings"] ?? [])
+          })
+        }).toList()
+      ).then((recordingGroups){
         var recordingsById = {}
 
-        for (var recording in recordings) {
-          recordingsById[recording["id"]] = recording
+        for (var recordings in recordingGroups) {
+          for (var recording in recordings) {
+            recordingsById[recording["id"]] = recording
+          }
         }
 
         var items = recordingMbids
@@ -97,7 +110,7 @@ class ArtistEndpoint {
         return {
           limit: topLimit,
           nextOffset: null,
-          total: items.length,
+          total: recordingMbids.length,
           hasMore: false,
           items: items
         }.toJson()
