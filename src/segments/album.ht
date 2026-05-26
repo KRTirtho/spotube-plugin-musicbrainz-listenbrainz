@@ -43,23 +43,28 @@ class AlbumEndpoint {
       }.toJson()
     ).then((res){
       var data = res.data
-      var album = MbConverter.releaseGroups([data]).first
       var officialRelease = MbConverter.officialRelease(data["releases"])
       
       return mbApi.get_req(
-        "/recording",
+        "/release/${officialRelease["id"]}",
         queryParameters: {
           "fmt": "json",
-          "query": "reid:${officialRelease["id"]}",
+          "inc": "artist-credits+recordings+release-groups+isrcs",
         }.toJson()
       ).then((res){
         var data = res.data
-        var items = MbConverter.recordingWithoutAlbum(data["recordings"], album)
+        var tracks = (data["media"] ?? []).expand((media){
+          return media["tracks"].map((track){
+            track["recording"]["releases"] = [officialRelease]
+            return track["recording"]
+          }).toList()
+        }).toList()
+        var items = MbConverter.recordings(tracks)
 
         return {
           limit: limit ?? 20,
           nextOffset: null,
-          total: data["count"],
+          total: items.length,
           hasMore: false,
           items: items
         }.toJson()
