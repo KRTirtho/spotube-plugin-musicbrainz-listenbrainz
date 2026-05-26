@@ -43,6 +43,7 @@ class AlbumEndpoint {
       }.toJson()
     ).then((res){
       var data = res.data
+      var album = MbConverter.releaseGroups([data]).first
       var officialRelease = MbConverter.officialRelease(data["releases"])
       
       return mbApi.get_req(
@@ -59,7 +60,7 @@ class AlbumEndpoint {
             return track["recording"]
           }).toList()
         }).toList()
-        var items = MbConverter.recordings(tracks)
+        var items = MbConverter.recordingWithoutAlbum(tracks, album)
 
         return {
           limit: limit ?? 20,
