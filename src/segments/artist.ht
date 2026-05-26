@@ -168,6 +168,7 @@ class ArtistEndpoint {
       }.toJson()
     ).then((res) {
       var artistIds = res.data.keys
+      artistIds = artistIds.where((id) => id != artistId).toList()
       return artistCommon.listArtists(artistIds).then((artists){
         var items = MbConverter.artists(artists)
         
