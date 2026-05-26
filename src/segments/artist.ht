@@ -124,7 +124,7 @@ class ArtistEndpoint {
       queryParameters: {
         fmt: "json",
         artist: id,
-        type: "album",
+        type: "album|ep",
         "release-group-status": "website-default",
         limit: limit ?? 20,
         offset: offset ?? 0,
