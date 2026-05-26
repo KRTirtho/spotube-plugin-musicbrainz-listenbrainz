@@ -49,61 +49,59 @@ class ArtistEndpoint {
   }
 
   fun topTracks(id: string, {limit: int, offset: int}) {
-    return mbApi.get_req(
-      "/release",
-      queryParameters: {
-        fmt: "json",
-        artist: id,
-        limit: 5,
-        offset: 0,
-        inc: "artist-credits+recordings+ratings+isrcs+release-groups"
-      }.toJson()
+    var topLimit = limit ?? 20
+    if (topLimit > 20) {
+      topLimit = 20
+    }
+
+    return lbApi.get_req(
+      "/popularity/top-recordings-for-artist/${id}",
     ).then((res){
-      var data = res.data
+      var data = res.data ?? []
+      var recordingMbids = data
+        .take(topLimit)
+        .map((recording) => recording["recording_mbid"])
+        .where((recordingMbid) => recordingMbid != null)
+        .toList()
 
-      var tracks = data["releases"].expand((release){
-        var medias = release["media"].toList()
-        release["media"] = null
-
-        return medias.expand((media){
-          return media["tracks"].map((track){
-            track["recording"]["releases"] = [release]
-            return track["recording"]
-          }).toList()
-        }).toList()
-      }).toList()
-
-      // Remove duplicates
-      for (var i = 0; i < tracks.length; i++) {
-        for (var j = i + 1; j < tracks.length; j++) {
-          if (tracks[i]["title"] == tracks[j]["title"]) {
-            tracks.removeAt(j)
-            j--
-          }
-        }
+      if (recordingMbids.isEmpty) {
+        return {
+          limit: topLimit,
+          nextOffset: null,
+          total: 0,
+          hasMore: false,
+          items: []
+        }.toJson()
       }
 
-      tracks.sort((a, b) {
-        var aVoteCount = a["rating"]["votes-count"] ?? 0
-        var bVoteCount = b["rating"]["votes-count"] ?? 0
-        var aRating = a["rating"]["value"] ?? 0
-        var bRating = b["rating"]["value"] ?? 0
+      return mbApi.get_req(
+        "/recording",
+        queryParameters: {
+          fmt: "json",
+          query: recordingMbids.map((recordingMbid) => "rid:${recordingMbid}").join(" OR "),
+          inc: "artist-credits+releases+release-groups+isrcs"
+        }.toJson()
+      ).then((res){
+        var recordings = MbConverter.recordings(res.data["recordings"] ?? [])
+        var recordingsById = {}
 
-        var aAvg = aVoteCount > 0 ? aRating / aVoteCount : 0
-        var bAvg = bVoteCount > 0 ? bRating / bVoteCount : 0
+        for (var recording in recordings) {
+          recordingsById[recording["id"]] = recording
+        }
 
-        return bAvg.compareTo(aAvg)
+        var items = recordingMbids
+          .where((recordingMbid) => recordingsById.containsKey(recordingMbid))
+          .map((recordingMbid) => recordingsById[recordingMbid])
+          .toList()
+
+        return {
+          limit: topLimit,
+          nextOffset: null,
+          total: items.length,
+          hasMore: false,
+          items: items
+        }.toJson()
       })
-
-      var items = MbConverter.recordings(tracks)
-
-      return {
-        limit: limit ?? 10,
-        nextOffset: null,
-        total: items.length,
-        hasMore: false,
-        items: items
-      }.toJson()
     })
   }
 
