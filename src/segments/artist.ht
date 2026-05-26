@@ -109,24 +109,26 @@ class ArtistEndpoint {
 
   fun albums(id: string, {offset: int, limit: int}) {
     return mbApi.get_req(
-      "/release",
+      "/release-group",
       queryParameters: {
         fmt: "json",
         artist: id,
+        type: "album",
+        "release-group-status": "website-default",
         limit: limit ?? 20,
         offset: offset ?? 0,
-        inc: "artist-credits+release-groups"
+        inc: "artist-credits"
       }.toJson()
     ).then((res){
       var data = res.data
 
-      var items = MbConverter.releases(data["releases"])
-      var hasMore = data["releases"].length >= (limit ?? 20)
+      var items = MbConverter.releaseGroups(data["release-groups"])
+      var hasMore = data["release-groups"].length >= (limit ?? 20)
 
       return {
         limit: limit ?? 20,
-        nextOffset: hasMore ? data["release-offset"] + (limit ?? 20) : null,
-        total: data["release-count"],
+        nextOffset: hasMore ? data["release-group-offset"] + (limit ?? 20) : null,
+        total: data["release-group-count"],
         hasMore: hasMore,
         items: items
       }.toJson()
