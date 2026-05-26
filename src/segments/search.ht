@@ -112,35 +112,90 @@ class SearchEndpoint {
   }
 
   fun tracks(query: string, {offset: int, limit: int}) {
+    var pageLimit = limit ?? 10
+    var pageOffset = offset ?? 0
+
     return mbApi.get_req(
       "/recording",
       queryParameters: {
         query: query,
-        limit: limit ?? 10,
-        offset: offset ?? 0,
+        limit: pageLimit,
+        offset: pageOffset,
         fmt: "json",
       }.toJson()
     ).then((res){
-      if (res.data["recordings"].isEmpty) {
+      var musicbrainzItems = MbConverter.recordings(res.data["recordings"] ?? [])
+      var hasMore = musicbrainzItems.length >= pageLimit
+
+      if (pageOffset != 0) {
         return {
-          limit: limit ?? 10,
-          nextOffset: null,
-          total: 0,
-          hasMore: false,
-          items: []
+          limit: pageLimit,
+          nextOffset: hasMore ? res.data["offset"] + pageLimit : null,
+          total: res.data["count"],
+          hasMore: hasMore,
+          items: musicbrainzItems
         }.toJson()
       }
-      
-      var items = MbConverter.recordings(res.data["recordings"])
-      var hasMore = items.length >= (limit ?? 10)
 
-      return {
-        limit: limit ?? 10,
-        nextOffset: hasMore ? res.data["offset"] + (limit ?? 10) : null,
-        total: res.data["count"],
-        hasMore: hasMore,
-        items: items
-      }.toJson()
+      return lbApi.get_req(
+        "https://labs.api.listenbrainz.org/recording-search/json",
+        queryParameters: {
+          query: query
+        }.toJson()
+      ).then((rankedRes){
+        var rankedRecordingIds = (rankedRes.data ?? [])
+          .take(pageLimit)
+          .map((recording) => recording["recording_mbid"])
+          .where((recordingMbid) => recordingMbid != null)
+          .toList()
+
+        if (rankedRecordingIds.isEmpty) {
+          return {
+            limit: pageLimit,
+            nextOffset: hasMore ? res.data["offset"] + pageLimit : null,
+            total: res.data["count"],
+            hasMore: hasMore,
+            items: musicbrainzItems
+          }.toJson()
+        }
+
+        return mbApi.get_req(
+          "/recording",
+          queryParameters: {
+            fmt: "json",
+            query: rankedRecordingIds.map((recordingMbid) => "rid:${recordingMbid}").join(" OR "),
+            limit: rankedRecordingIds.length,
+            inc: "artist-credits+releases+release-groups+isrcs"
+          }.toJson()
+        ).then((rankedMbRes){
+          var recordingsById = {}
+          for (var recording in MbConverter.recordings(rankedMbRes.data["recordings"] ?? [])) {
+            recordingsById[recording["id"]] = recording
+          }
+
+          var items = rankedRecordingIds
+            .where((recordingMbid) => recordingsById.containsKey(recordingMbid))
+            .map((recordingMbid) => recordingsById[recordingMbid])
+            .toList()
+
+          for (var recording in musicbrainzItems) {
+            if (items.length >= pageLimit) {
+              break
+            }
+            if (!rankedRecordingIds.contains(recording["id"])) {
+              items.add(recording)
+            }
+          }
+
+          return {
+            limit: pageLimit,
+            nextOffset: hasMore ? res.data["offset"] + pageLimit : null,
+            total: res.data["count"],
+            hasMore: hasMore,
+            items: items
+          }.toJson()
+        })
+      })
     })
   }
 
