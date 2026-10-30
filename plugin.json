@@ -1,8 +1,8 @@
 {
-  "version": "1.0.0",
+  "version": "1.0.1",
   "name": "Musicbrainz and Listenbrainz",
   "author": "Kingkor Roy Tirtho",
-  "description": "Musicbrainz and Listenbrainz integration for Spotube",
+  "description": "Musicbrainz and Listenbrainz integration for Spotube with resilience pipeline (rate limiting, circuit breaker, retry)",
   "entryPoint": "BrainzMetadataProviderPlugin",
   "apis": ["webview", "localstorage", "timezone"],
   "abilities": ["authentication", "scrobbling", "metadata"],

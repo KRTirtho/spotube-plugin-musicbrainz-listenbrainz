@@ -1,0 +1,82 @@
+import "module:std" as std
+
+var DateTime = std.DateTime
+var Duration = std.Duration
+var Random = std.Random
+
+/// Configuración de retry con backoff exponencial y jitter
+class RetryConfig {
+  var maxAttempts: int
+  var initialDelay: Duration
+  var multiplier: double
+  var maxDelay: Duration
+
+  construct({
+    this.maxAttempts = 3,
+    this.initialDelay = Duration(milliseconds: 400),
+    this.multiplier = 2.0,
+    this.maxDelay = Duration(seconds: 10)
+  })
+}
+
+/// Ejecuta una función con retry exponencial + jitter
+///
+/// Parámetros basados en DuranMusic:
+/// - 3 intentos máximo
+/// - Backoff: 400ms → 800ms → 1600ms (max 10s)
+/// - Jitter: aleatorio entre 0 y delay calculado
+fun withRetry(
+  config: RetryConfig,
+  fn: () -> Future,
+  onRetry: (int attempt, dynamic error, Duration delay)? = null
+) -> Future {
+  var attempt = 0
+  var lastError: dynamic
+
+  fun attemptFn() -> Future {
+    attempt++
+    return fn().catchError((error) {
+      lastError = error
+      
+      if (attempt >= config.maxAttempts) {
+        throw error
+      }
+
+      var delay = config.initialDelay * (config.multiplier ^ (attempt - 1))
+      if (delay > config.maxDelay) {
+        delay = config.maxDelay
+      }
+
+      // Jitter: random entre 0 y delay
+      var jitter = Random().nextDouble() * delay.inMilliseconds
+      var finalDelay = Duration(milliseconds: jitter.toInt())
+
+      if (onRetry != null) {
+        onRetry(attempt, error, finalDelay)
+      }
+
+      return Future.delayed(finalDelay).then((_) => attemptFn())
+    })
+  }
+
+  return attemptFn()
+}
+
+/// Helper para retry simple con configuración por defecto
+fun retry(
+  fn: () -> Future,
+  {int maxAttempts = 3,
+   Duration initialDelay = const Duration(milliseconds: 400),
+   double multiplier = 2.0,
+   Duration maxDelay = const Duration(seconds: 10),
+   Function(int, dynamic, Duration)? onRetry} -> Future {
+  var config = RetryConfig(
+    maxAttempts: maxAttempts,
+    initialDelay: initialDelay,
+    multiplier: multiplier,
+    maxDelay: maxDelay
+  )
+  return withRetry(config, fn, onRetry)
+}
+
+export { RetryConfig, withRetry, retry }

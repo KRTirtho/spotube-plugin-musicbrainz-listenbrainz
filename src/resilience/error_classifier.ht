@@ -1,0 +1,56 @@
+import "module:std" as std
+
+var Regex = std.Regex
+
+/// Clasificador de errores para determinar tipo de error y acción adecuada
+class ErrorClassifier {
+  /// Hints que indican errores de conexión (offline)
+  static var _offlineHints = [
+    "SocketException",
+    "Failed host lookup",
+    "Connection refused",
+    "Connection reset",
+    "Network is unreachable",
+    "connection error",
+    "Network error",
+    "timeout",
+    "TimeoutException"
+  ]
+
+  /// Clasifica un error en ErrorKind
+  static fun classify(error: dynamic) -> ErrorKind {
+    var text = error.toString().toLowerCase()
+    
+    // Verificar hints de offline
+    for (var hint in _offlineHints) {
+      if (text.contains(hint.toLowerCase())) {
+        return ErrorKind.OFFLINE
+      }
+    }
+
+    // Verificar códigos de estado HTTP en el mensaje
+    var statusCodeRegex = Regex(r"status code of (\d+)")
+    var match = statusCodeRegex.firstMatch(text)
+    if (match != null) {
+      var code = int.parse(match.group(1)!)
+      if (code >= 500 || code == 429 || code == 408) {
+        return ErrorKind.SERVICE_UNAVAILABLE
+      }
+    }
+
+    // Verificar si es HttpException con código
+    if (error is std.HttpException) {
+      var code = error.code()
+      if (code >= 500 || code == 429 || code == 408) {
+        return ErrorKind.SERVICE_UNAVAILABLE
+      }
+      if (code == 0 || code == 400) {  // Connection errors often show as 0 or 400
+        return ErrorKind.OFFLINE
+      }
+    }
+
+    return ErrorKind.UNKNOWN
+  }
+}
+
+export { ErrorClassifier }

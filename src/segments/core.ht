@@ -8,8 +8,9 @@ var DateTime = std.DateTime
 class CorePlugin {
   var client: HttpClient
   var lbApi: HttpClient
+  var plugin: dynamic  // Referencia al plugin principal para acceder a lbResilient
 
-  construct (this.client, this.lbApi)
+  construct (this.client, this.lbApi, [this.plugin])
 
   /// Scrobble the provided details to the scrobbling service supported by the plugin.
   /// "scrobbling" must be set as an ability in the plugin.json
@@ -21,12 +22,13 @@ class CorePlugin {
   ///   - [name] -> The name of the artist.
   /// - [album] -> The album of the track
   ///   - [id] -> The unique identifier of the album.
-  ///   - [name] -> The name of the album.
+  /// - [name] -> The name of the album.
   /// - [timestamp] -> The timestamp of the scrobble (optional).
   /// - [duration_ms] -> The duration of the track in milliseconds (optional).
   /// - [isrc] -> The ISRC code of the track (optional).
   fun scrobble(details: Map) {
-    return lbApi.post(
+    // Usar lbResilient si plugin disponible, sino llamada directa
+    var scrobbleFn = () => lbApi.post(
       "/submit-listens",
       data: {
         listen_type: "single",
@@ -51,6 +53,11 @@ class CorePlugin {
         ]
       }.toJson()
     ).then((res)=> null)
+    
+    if (plugin != null) {
+      return plugin.lbResilient(scrobbleFn)
+    }
+    return scrobbleFn()
   }
 
   /// Checks for updates to the plugin.

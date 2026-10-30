@@ -9,6 +9,10 @@ import { SearchEndpoint } from './segments/search.ht'
 import { TrackEndpoint } from './segments/track.ht'
 import { UserEndpoint } from './segments/user.ht'
 import { CorePlugin } from './segments/core.ht'
+import { TokenBucketRateLimiter, musicbrainzRateLimiter } from './resilience/rate_limiter.ht'
+import { CircuitBreaker, musicbrainzCircuitBreaker, listenbrainzCircuitBreaker, ErrorKind } from './resilience/circuit_breaker.ht'
+import { ErrorClassifier } from './resilience/error_classifier.ht'
+import { retry, RetryConfig } from './resilience/retry.ht'
 
 var Stream = std.Stream
 var HttpClient = std.HttpClient
@@ -27,7 +31,7 @@ class BrainzMetadataProviderPlugin {
 
   var lbApi: HttpClient
   var mbApi: HttpClient
-  
+
   construct (){
     mbApi = HttpClient(
       HttpBaseOptions(
@@ -39,7 +43,7 @@ class BrainzMetadataProviderPlugin {
         baseUrl: "https://api.listenbrainz.org/1",
       )
     )
-    
+
     auth = AuthEndpoint(lbApi, mbApi)
     core = CorePlugin(mbApi, lbApi)
 
@@ -65,7 +69,7 @@ class BrainzMetadataProviderPlugin {
     )
 
     var username = auth.credentials == null ? null : auth.credentials['username']
-    
+
     album = AlbumEndpoint(lbApi, mbApi, username)
     artist = ArtistEndpoint(lbApi, mbApi, username)
     browse = BrowseEndpoint(lbApi, mbApi, username)
@@ -73,8 +77,69 @@ class BrainzMetadataProviderPlugin {
     search = SearchEndpoint(lbApi, mbApi, username)
     track = TrackEndpoint(lbApi, mbApi, username)
     user = UserEndpoint(lbApi, mbApi, username)
-    core = CorePlugin(mbApi, lbApi)
+    core = CorePlugin(mbApi, lbApi, this)  // Pasar referencia al plugin para lbResilient
+  }
+
+  /// Wrapper con resiliencia para llamadas a MusicBrainz
+  fun mbResilient(fn: () -> Future) -> Future {
+    // Rate limiting
+    if (!musicbrainzRateLimiter.canAcquire()) {
+      // Esperar hasta que haya token disponible
+      var waitTime = Duration(milliseconds: ((1.0 - musicbrainzRateLimiter.availableTokens) / 8.0 * 1000).toInt())
+      return Future.delayed(waitTime).then((_) => mbResilient(fn))
+    }
+    musicbrainzRateLimiter.acquire()
+
+    // Circuit breaker
+    if (!musicbrainzCircuitBreaker.canProceed()) {
+      throw std.Exception("MusicBrainz circuit breaker is OPEN")
+    }
+
+    // Retry con backoff exponencial + jitter
+    return retry(
+      fn,
+      maxAttempts: 3,
+      initialDelay: Duration(milliseconds: 400),
+      multiplier: 2.0,
+      maxDelay: Duration(seconds: 10),
+      onRetry: (attempt, error, delay) {
+        print("MusicBrainz retry attempt $attempt after error: $error, waiting ${delay.inMilliseconds}ms")
+      }
+    ).then((result) {
+      musicbrainzCircuitBreaker.recordSuccess()
+      return result
+    }).catchError((error) {
+      var errorKind = ErrorClassifier.classify(error)
+      musicbrainzCircuitBreaker.recordFailure(errorKind)
+      throw error
+    })
+  }
+
+  /// Wrapper con resiliencia para llamadas a ListenBrainz
+  fun lbResilient(fn: () -> Future) -> Future {
+    // Circuit breaker
+    if (!listenbrainzCircuitBreaker.canProceed()) {
+      throw std.Exception("ListenBrainz circuit breaker is OPEN")
+    }
+
+    return retry(
+      fn,
+      maxAttempts: 3,
+      initialDelay: Duration(milliseconds: 400),
+      multiplier: 2.0,
+      maxDelay: Duration(seconds: 10),
+      onRetry: (attempt, error, delay) {
+        print("ListenBrainz retry attempt $attempt after error: $error, waiting ${delay.inMilliseconds}ms")
+      }
+    ).then((result) {
+      listenbrainzCircuitBreaker.recordSuccess()
+      return result
+    }).catchError((error) {
+      var errorKind = ErrorClassifier.classify(error)
+      listenbrainzCircuitBreaker.recordFailure(errorKind)
+      throw error
+    })
   }
 }
 
-export { TemplateMetadataProviderPlugin }
+export { BrainzMetadataProviderPlugin }

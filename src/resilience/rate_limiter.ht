@@ -1,0 +1,64 @@
+import "module:std" as std
+
+var DateTime = std.DateTime
+var Duration = std.Duration
+
+/// Token Bucket Rate Limiter para MusicBrainz/ListenBrainz
+///
+/// Evita que múltiples llamadas simultáneas agoten el rate limit
+/// de los proveedores de metadatos (causa raíz de HTTP 503).
+class TokenBucketRateLimiter {
+  var maxTokens: double
+  var _tokens: double
+  var _lastRefill: DateTime
+  var refillRate: double  // tokens por segundo
+
+  construct(maxTokens: int, refillRatePerSecond: double) {
+    this.maxTokens = maxTokens.toDouble()
+    this._tokens = maxTokens.toDouble()
+    this._lastRefill = DateTime.now()
+    this.refillRate = refillRatePerSecond
+  }
+
+  /// Intenta consumir un token. Retorna true si hay token disponible.
+  fun acquire() -> bool {
+    _refill()
+    if (_tokens >= 1.0) {
+      _tokens -= 1.0
+      return true
+    }
+    return false
+  }
+
+  /// Verifica disponibilidad sin consumir.
+  fun canAcquire() -> bool {
+    _refill()
+    return _tokens >= 1.0
+  }
+
+  /// Tokens disponibles actualmente.
+  get availableTokens -> double {
+    _refill()
+    return _tokens
+  }
+
+  /// Reinicia el limiter.
+  fun reset() {
+    _tokens = maxTokens
+    _lastRefill = DateTime.now()
+  }
+
+  fun _refill() {
+    var now = DateTime.now()
+    var elapsed = now.difference(_lastRefill).inMilliseconds / 1000.0
+    var newTokens = _tokens + elapsed * refillRate
+    _tokens = newTokens < maxTokens ? newTokens : maxTokens
+    _lastRefill = now
+  }
+}
+
+/// Instancia global compartida para MusicBrainz/ListenBrainz
+/// Configuración: 8 req/s sostenido, burst de 16
+var musicbrainzRateLimiter = TokenBucketRateLimiter(16, 8.0)
+
+export { TokenBucketRateLimiter, musicbrainzRateLimiter }
