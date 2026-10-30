@@ -1,0 +1,126 @@
+import "module:std" as std
+
+var DateTime = std.DateTime
+var Duration = std.Duration
+
+/// Tipos de error clasificados para decisiones de fallback
+enum ErrorKind {
+  UNKNOWN,
+  OFFLINE,
+  SERVICE_UNAVAILABLE
+}
+
+/// Estados del Circuit Breaker
+enum CircuitState {
+  CLOSED,    // Normal, peticiones pasan
+  OPEN,      // Circuito abierto, peticiones fallan inmediatamente
+  HALF_OPEN  // Probando recuperación
+}
+
+/// Configuración del Circuit Breaker
+class CircuitBreakerConfig {
+  var failureThreshold: int      // Fallos consecutivos para abrir
+  var recoveryTimeout: Duration  // Tiempo antes de half-open
+  var halfOpenMaxAttempts: int   // Éxitos en half-open para cerrar
+
+  construct({
+    this.failureThreshold = 5,
+    this.recoveryTimeout = Duration(seconds: 30),
+    this.halfOpenMaxAttempts = 3
+  })
+}
+
+/// Circuit Breaker para proteger contra fallos repetidos
+///
+/// Estados:
+/// - CLOSED: Normal, peticiones pasan
+/// - OPEN: Fallo umbral alcanzado, bloquea peticiones por recoveryTimeout
+/// - HALF_OPEN: Probando recuperación, permite probes limitados
+class CircuitBreaker {
+  var _config: CircuitBreakerConfig
+  var _state: CircuitState = CircuitState.CLOSED
+  var _consecutiveFailures: int = 0
+  var _openedAt: DateTime? = null
+  var _halfOpenSuccesses: int = 0
+  var _lastErrorKind: ErrorKind = ErrorKind.UNKNOWN
+
+  construct(this._config)
+
+  get state -> CircuitState {
+    _updateStateFromTime()
+    return _state
+  }
+
+  /// true si la petición puede proceder
+  fun canProceed() -> bool {
+    _updateStateFromTime()
+    return _state == CircuitState.CLOSED || _state == CircuitState.HALF_OPEN
+  }
+
+  /// Registra un éxito
+  fun recordSuccess() {
+    _updateStateFromTime()
+    if (_state == CircuitState.CLOSED) {
+      _consecutiveFailures = 0
+    } else if (_state == CircuitState.HALF_OPEN) {
+      _halfOpenSuccesses++
+      if (_halfOpenSuccesses >= _config.halfOpenMaxAttempts) {
+        _closeCircuit()
+      }
+    }
+  }
+
+  /// Registra un fallo
+  fun recordFailure(errorKind: ErrorKind) {
+    _lastErrorKind = errorKind
+    _consecutiveFailures++
+
+    if (_consecutiveFailures >= _config.failureThreshold) {
+      _openCircuit()
+    }
+  }
+
+  /// Reset manual
+  fun reset() {
+    _state = CircuitState.CLOSED
+    _consecutiveFailures = 0
+    _openedAt = null
+    _halfOpenSuccesses = 0
+    _lastErrorKind = ErrorKind.UNKNOWN
+  }
+
+  fun _updateStateFromTime() {
+    if (_state == CircuitState.OPEN && _openedAt != null) {
+      var elapsed = DateTime.now().difference(_openedAt!)
+      if (elapsed >= _config.recoveryTimeout) {
+        _enterHalfOpen()
+      }
+    }
+  }
+
+  fun _openCircuit() {
+    _state = CircuitState.OPEN
+    _openedAt = DateTime.now()
+    _halfOpenSuccesses = 0
+  }
+
+  fun _enterHalfOpen() {
+    _state = CircuitState.HALF_OPEN
+    _openedAt = null
+    _halfOpenSuccesses = 0
+    _consecutiveFailures = _config.failureThreshold - 1
+  }
+
+  fun _closeCircuit() {
+    _state = CircuitState.CLOSED
+    _consecutiveFailures = 0
+    _openedAt = null
+    _halfOpenSuccesses = 0
+  }
+}
+
+/// Instancias de circuit breaker por proveedor
+var musicbrainzCircuitBreaker = CircuitBreaker(CircuitBreakerConfig())
+var listenbrainzCircuitBreaker = CircuitBreaker(CircuitBreakerConfig())
+
+export { ErrorKind, CircuitState, CircuitBreakerConfig, CircuitBreaker, musicbrainzCircuitBreaker, listenbrainzCircuitBreaker }
